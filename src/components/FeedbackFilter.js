@@ -1,27 +1,39 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import moment from 'moment';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 const FeedbackFilter = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [callCenter, setCallCenter] = useState('');
 
-  const downloadCSV = (headers, rows) => {
-    let csv = headers.join(',') + '\n';
-    rows.forEach(row => {
-      const line = headers.map((_, idx) => {
-        const cell = (row[idx] || '').replace(/"/g, '""');
-        return `"${cell}"`;
-      }).join(',');
-      csv += line + '\n';
+  const downloadXLSX = async (headers, rows) => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Feedback');
+
+    // Add headers
+    sheet.addRow(headers);
+
+    // Add rows
+    rows.forEach(row => sheet.addRow(row));
+
+    // Style cells
+    sheet.eachRow((row, rowNum) => {
+      row.eachCell(cell => {
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+      });
     });
 
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `feedback-${callCenter}-${startDate}_to_${endDate}.csv`;
-    link.click();
+    const buffer = await workbook.xlsx.writeBuffer();
+    saveAs(new Blob([buffer]), `feedback-${callCenter}-${startDate}_to_${endDate}.xlsx`);
   };
 
   const handleSubmit = async (e) => {
@@ -60,24 +72,32 @@ const FeedbackFilter = () => {
         return;
       }
 
-      // ✅ HTML table with borders, center text, and ellipsis for long content
-      const cellStyle = 'border: 1px solid black; padding: 6px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;';
+      // HTML clipboard table
+      const cellStyle = `
+        border: 1px solid black;
+        padding: 6px;
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-align: center;
+      `;
+
       let html = `<table style="border-collapse: collapse; width: 100%;">`;
-      html += `<tr>${headers.map(h => `<th style="${cellStyle}">${h}</th>`).join('')}</tr>`;
+      html += `<thead><tr>${headers.map(h => `<th style="${cellStyle}">${h}</th>`).join('')}</tr></thead>`;
+      html += `<tbody>`;
       filtered.forEach(row => {
         html += `<tr>${headers.map((_, idx) =>
           `<td style="${cellStyle}">${row[idx] || ''}</td>`
         ).join('')}</tr>`;
       });
-      html += `</table>`;
+      html += `</tbody></table>`;
 
-      // ✅ Fallback plain text (tab-separated)
       let plainText = headers.join('\t') + '\n';
       filtered.forEach(row => {
         plainText += headers.map((_, idx) => row[idx] || '').join('\t') + '\n';
       });
 
-      // ✅ Copy to clipboard (HTML & plain text)
       if (navigator.clipboard && window.ClipboardItem) {
         await navigator.clipboard.write([
           new ClipboardItem({
@@ -85,14 +105,15 @@ const FeedbackFilter = () => {
             "text/plain": new Blob([plainText], { type: "text/plain" })
           })
         ]);
-        alert(`✅ ${filtered.length} entries copied with borders and ellipsis!`);
+        alert(`✅ ${filtered.length} entries copied with formatting!`);
       } else {
         await navigator.clipboard.writeText(plainText);
         alert(`✅ ${filtered.length} entries copied (plain text only).`);
       }
 
-      // ✅ Download CSV
-      downloadCSV(headers, filtered);
+      // ✅ Save as XLSX
+      await downloadXLSX(headers, filtered);
+
     } catch (err) {
       console.error(err);
       alert('❌ Failed to load or copy data.');
@@ -135,7 +156,7 @@ const FeedbackFilter = () => {
           </select>
         </div>
       </div>
-      <button type="submit" className="btn btn-primary">📋 Copy & 📥 Download</button>
+      <button type="submit" className="btn btn-success">📋 Copy + 📥 Download XLSX</button>
     </form>
   );
 };
