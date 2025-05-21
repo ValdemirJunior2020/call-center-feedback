@@ -13,14 +13,10 @@ const FeedbackFilter = () => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Feedback');
 
-    // Add headers
     sheet.addRow(headers);
-
-    // Add rows
     rows.forEach(row => sheet.addRow(row));
 
-    // Style cells
-    sheet.eachRow((row, rowNum) => {
+    sheet.eachRow(row => {
       row.eachCell(cell => {
         cell.alignment = { vertical: 'middle', horizontal: 'center' };
         cell.border = {
@@ -52,27 +48,54 @@ const FeedbackFilter = () => {
     try {
       const res = await axios.get(url);
       const rows = res.data.values;
-      const headers = rows[0].map(h => h.trim());
+      const rawHeaders = rows[0];
+      const headers = rawHeaders.map(h => h.trim());
       const data = rows.slice(1);
 
-      const dateIndex = headers.indexOf("Date");
-      const centerIndex = headers.indexOf("Call Center");
+      console.log("✅ Headers:", headers);
+      console.log("✅ Raw data:", data);
 
-      const filtered = data.filter(row => {
-        const rowDate = moment(row[dateIndex], "MM/DD/YYYY");
-        const rowCenter = row[centerIndex];
-        return (
-          rowDate.isBetween(moment(startDate), moment(endDate), 'days', '[]') &&
-          rowCenter.trim().toLowerCase() === callCenter.toLowerCase()
-        );
-      });
+      const dateIndex = headers.findIndex(h => h.toLowerCase().includes('timestamp'));
+      const centerIndex = headers.findIndex(h => h.toLowerCase().includes('call center'));
 
-      if (filtered.length === 0) {
-        alert("No feedback found.");
+      if (dateIndex === -1 || centerIndex === -1) {
+        console.log("Matching indices:", { dateIndex, centerIndex });
+        alert("❌ 'Timestamp' or 'Call Center' column not found. Please verify column headers.");
         return;
       }
 
-      // HTML clipboard table
+      const filtered = data.filter(row => {
+        const rawDate = row[dateIndex];
+        const rowCenter = row[centerIndex]?.trim().toLowerCase();
+        const selectedCenter = callCenter.trim().toLowerCase();
+        const parsedDate = moment(new Date(rawDate));
+        const isValidDate = parsedDate.isValid();
+
+        const isWithinRange = isValidDate &&
+          parsedDate.isBetween(moment(startDate), moment(endDate), 'days', '[]');
+        const matchesCenter = rowCenter === selectedCenter;
+
+        // Debug each row:
+        console.log({
+          rawDate,
+          parsedDate: parsedDate.format('YYYY-MM-DD'),
+          isValidDate,
+          isWithinRange,
+          rowCenter,
+          selectedCenter,
+          matchesCenter
+        });
+
+        return isWithinRange && matchesCenter;
+      });
+
+      console.log("✅ Filtered results:", filtered);
+
+      if (filtered.length === 0) {
+        alert("⚠️ No feedback found in the selected range.");
+        return;
+      }
+
       const cellStyle = `
         border: 1px solid black;
         padding: 6px;
@@ -105,18 +128,17 @@ const FeedbackFilter = () => {
             "text/plain": new Blob([plainText], { type: "text/plain" })
           })
         ]);
-        alert(`✅ ${filtered.length} entries copied with formatting!`);
+        alert(`✅ ${filtered.length} feedback entries copied!`);
       } else {
         await navigator.clipboard.writeText(plainText);
         alert(`✅ ${filtered.length} entries copied (plain text only).`);
       }
 
-      // ✅ Save as XLSX
       await downloadXLSX(headers, filtered);
 
     } catch (err) {
-      console.error(err);
-      alert('❌ Failed to load or copy data.');
+      console.error("❌ Error fetching/parsing data:", err);
+      alert('❌ Failed to fetch or process data.');
     }
   };
 
